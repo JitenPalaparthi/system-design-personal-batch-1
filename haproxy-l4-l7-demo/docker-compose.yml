@@ -1,0 +1,23 @@
+services:
+  python-service:
+    build: ./python-service
+    networks: [demo]
+
+  go-service:
+    build: ./go-service
+    networks: [demo]
+
+  haproxy:
+    image: haproxy:3.2-alpine
+    ports:
+      - "8080:8080"   # L7 HTTP
+      - "9000:9000"   # L4 TCP
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - python-service
+      - go-service
+    networks: [demo]
+
+networks:
+  demo:
