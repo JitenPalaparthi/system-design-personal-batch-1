@@ -1,0 +1,55 @@
+services:
+  go1:
+    build: ./go-service
+    environment:
+      INSTANCE_NAME: go-1
+    networks: [backend]
+
+  go2:
+    build: ./go-service
+    environment:
+      INSTANCE_NAME: go-2
+    networks: [backend]
+
+  python1:
+    build: ./python-service
+    environment:
+      INSTANCE_NAME: python-1
+    networks: [backend]
+
+  python2:
+    build: ./python-service
+    environment:
+      INSTANCE_NAME: python-2
+    networks: [backend]
+
+  go-lb:
+    image: nginx:1.29-alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx-go-lb/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [go1, go2]
+    networks: [frontend, backend]
+
+  python-lb:
+    image: nginx:1.29-alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx-python-lb/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [python1, python2]
+    networks: [frontend, backend]
+
+  gateway:
+    image: nginx:1.29-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [go-lb, python-lb]
+    networks: [frontend]
+
+networks:
+  frontend:
+  backend:
