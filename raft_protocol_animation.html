@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raft Protocol Interactive Animation</title>
+<style>
+  :root{
+    --bg:#08111f; --panel:#0e1b2e; --panel2:#12233b; --text:#eaf2ff;
+    --muted:#9db0ca; --follower:#38bdf8; --candidate:#f59e0b;
+    --leader:#22c55e; --down:#64748b; --vote:#fbbf24; --heartbeat:#4ade80;
+    --danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:
+    radial-gradient(circle at 50% 0,#132a49 0,var(--bg) 45%);color:var(--text)}
+  header{padding:24px 28px 12px;text-align:center}
+  h1{margin:0;font-size:clamp(26px,4vw,44px)}
+  header p{color:var(--muted);margin:8px auto;max-width:900px}
+  .app{max-width:1250px;margin:auto;padding:14px 22px 40px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0 18px}
+  button{border:1px solid #29405f;background:#142742;color:#fff;padding:10px 15px;border-radius:10px;
+    cursor:pointer;font-weight:700;transition:.2s}
+  button:hover{transform:translateY(-1px);background:#1b3558}
+  button.danger{border-color:#6b2730;background:#3a1720}
+  .statusbar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stat,.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid #223957;
+    border-radius:14px;box-shadow:0 10px 30px #0005}
+  .stat{padding:12px;text-align:center}.stat b{display:block;font-size:22px}.stat span{color:var(--muted);font-size:12px}
+  .cluster{position:relative;height:590px;overflow:hidden;background:
+    linear-gradient(#ffffff05 1px,transparent 1px),linear-gradient(90deg,#ffffff05 1px,transparent 1px),#091525;
+    background-size:32px 32px;border:1px solid #223957;border-radius:18px}
+  svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .node{position:absolute;width:150px;height:150px;border-radius:50%;transform:translate(-50%,-50%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;border:4px solid var(--follower);
+    background:#0d2035;box-shadow:0 0 25px #38bdf844;transition:.4s;z-index:2}
+  .node .name{font-size:21px;font-weight:900}.node .role{font-size:13px;font-weight:800;margin-top:4px}
+  .node .term{font-size:12px;color:var(--muted);margin-top:3px}
+  .node .timer{width:75%;height:6px;background:#25364c;border-radius:10px;margin-top:8px;overflow:hidden}
+  .node .timer div{height:100%;width:100%;background:var(--follower);transform-origin:left}
+  .node.candidate{border-color:var(--candidate);box-shadow:0 0 32px #f59e0b66}
+  .node.candidate .timer div{background:var(--candidate)}
+  .node.leader{border-color:var(--leader);box-shadow:0 0 38px #22c55e88;transform:translate(-50%,-50%) scale(1.08)}
+  .node.leader .timer div{background:var(--leader)}
+  .node.down{border-color:var(--down);filter:grayscale(1);opacity:.45;box-shadow:none}
+  .badge{position:absolute;top:-11px;background:#16314f;border:1px solid #36577d;border-radius:20px;
+    padding:4px 9px;font-size:11px;font-weight:800}
+  .leader .badge{background:#123d25;border-color:#2e8b4c}
+  .packet{position:absolute;z-index:6;padding:5px 8px;border-radius:20px;font-size:10px;font-weight:900;
+    white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px #0008}
+  .packet.vote{background:var(--vote);color:#2c1d00}
+  .packet.heartbeat{background:var(--heartbeat);color:#052d13}
+  .packet.ack{background:#93c5fd;color:#09213d}
+  .quorum{position:absolute;left:16px;bottom:15px;background:#07101dcc;border:1px solid #29405f;
+    border-radius:12px;padding:10px 13px;z-index:8;font-size:13px}
+  .quorum strong{color:#fff}
+  .legend{display:flex;gap:15px;flex-wrap:wrap;justify-content:center;margin:12px 0;color:var(--muted);font-size:13px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px}
+  .explain{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:14px}
+  .card{padding:18px}.card h2{margin:0 0 9px;font-size:18px}.card p,.card li{color:#b9c7da;line-height:1.55}
+  #eventTitle{font-size:21px;color:#fff;font-weight:900;margin-bottom:7px}
+  #eventText{min-height:75px}
+  .log{height:230px;overflow:auto;background:#07101d;border-radius:10px;padding:10px;font-family:ui-monospace,monospace;
+    font-size:12px;color:#bcd0e8}
+  .log div{padding:4px;border-bottom:1px solid #ffffff0b}.log .important{color:#86efac;font-weight:bold}
+  .formula{background:#081321;border-left:3px solid #60a5fa;padding:10px 12px;border-radius:6px;margin-top:10px}
+  @media(max-width:760px){
+    .statusbar{grid-template-columns:1fr 1fr}.cluster{height:660px}
+    .node{width:115px;height:115px}.node .name{font-size:17px}
+    .explain{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Raft Consensus Protocol</h1>
+  <p>Interactive visualization of <b>Follower → Candidate → Leader</b>, randomized election timeouts,
+     <b>RequestVote</b>, <b>quorum</b>, leader election and periodic <b>heartbeats</b>.</p>
+</header>
+
+<div class="app">
+  <div class="controls">
+    <button onclick="startDemo()">▶ Auto Demo</button>
+    <button onclick="triggerElection()">⚡ Trigger Election</button>
+    <button class="danger" onclick="stopLeader()">✕ Stop Leader</button>
+    <button onclick="sendHeartbeats()">♥ Send Heartbeat</button>
+    <button onclick="resetCluster()">↻ Reset</button>
+  </div>
+
+  <div class="statusbar">
+    <div class="stat"><b id="termStat">0</b><span>CURRENT TERM</span></div>
+    <div class="stat"><b id="leaderStat">None</b><span>LEADER</span></div>
+    <div class="stat"><b id="votesStat">0 / 3</b><span>VOTES / QUORUM</span></div>
+    <div class="stat"><b id="aliveStat">5 / 5</b><span>ACTIVE NODES</span></div>
+  </div>
+
+  <div class="cluster" id="cluster">
+    <svg class="links" id="links"></svg>
+    <div class="quorum"><strong>Quorum:</strong> floor(N / 2) + 1 = <span id="quorumText">3</span>
+      <br><span style="color:#8fa5c0">5 nodes → majority requires 3 votes</span></div>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--follower)"></i>Follower</span>
+    <span><i class="dot" style="background:var(--candidate)"></i>Candidate</span>
+    <span><i class="dot" style="background:var(--leader)"></i>Leader</span>
+    <span><i class="dot" style="background:var(--vote)"></i>RequestVote</span>
+    <span><i class="dot" style="background:var(--heartbeat)"></i>Heartbeat / AppendEntries</span>
+  </div>
+
+  <div class="explain">
+    <div class="card">
+      <h2>What is happening?</h2>
+      <div id="eventTitle">Cluster initialized</div>
+      <div id="eventText">All servers start as <b>Followers</b>. Each follower waits for a heartbeat from a leader.
+        If no heartbeat arrives before its randomized election timeout, it becomes a <b>Candidate</b>.</div>
+      <div class="formula"><b>Quorum / Majority</b><br>
+        For N servers: <b>floor(N / 2) + 1</b>. With 5 nodes, a candidate needs <b>3 votes</b>, including its own vote.
+      </div>
+    </div>
+    <div class="card">
+      <h2>Event Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="explain">
+    <div class="card">
+      <h2>Raft Roles</h2>
+      <p><b style="color:var(--follower)">Follower:</b> Passive state. Receives heartbeats/log entries and resets its election timer.</p>
+      <p><b style="color:var(--candidate)">Candidate:</b> Created when a follower times out. Increments the term, votes for itself, and asks peers for votes.</p>
+      <p><b style="color:var(--leader)">Leader:</b> A candidate becomes leader after receiving a majority. It manages replication and sends heartbeats so followers do not start new elections.</p>
+    </div>
+    <div class="card">
+      <h2>Key Concepts</h2>
+      <p><b>Term:</b> A logical election epoch. Every new election increases the term.</p>
+      <p><b>Heartbeat:</b> An empty/regular <code>AppendEntries</code> RPC sent by the leader. It proves the leader is alive.</p>
+      <p><b>Quorum:</b> A strict majority. It prevents two isolated minorities from independently committing conflicting decisions.</p>
+      <p><b>Election timeout:</b> Randomized per follower to reduce simultaneous candidacies and split votes.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const cluster = document.getElementById('cluster');
+const positions = [
+  [50,15],[18,43],[30,78],[70,78],[82,43]
+];
+let nodes=[], term=0, leader=null, votes=0, timers=[], heartbeatTimer=null, demoTimers=[];
+const quorum = Math.floor(5/2)+1;
+
+function makeNodes(){
+  positions.forEach((p,i)=>{
+    const el=document.createElement('div');
+    el.className='node follower'; el.style.left=p[0]+'%'; el.style.top=p[1]+'%';
+    el.innerHTML=`<div class="badge">SERVER ${i+1}</div><div class="name">Node ${i+1}</div>
+      <div class="role">FOLLOWER</div><div class="term">Term 0</div><div class="timer"><div></div></div>`;
+    cluster.appendChild(el);
+    nodes.push({id:i,el,role:'follower',alive:true,votedTerm:-1});
+  });
+  drawLinks(); updateStats();
+}
+function drawLinks(){
+  const svg=document.getElementById('links'); svg.innerHTML='';
+  for(let i=0;i<5;i++) for(let j=i+1;j<5;j++){
+    let l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',positions[i][0]+'%');l.setAttribute('y1',positions[i][1]+'%');
+    l.setAttribute('x2',positions[j][0]+'%');l.setAttribute('y2',positions[j][1]+'%');
+    l.setAttribute('stroke','#29405f');l.setAttribute('stroke-width','1.2');l.setAttribute('stroke-dasharray','4 6');
+    svg.appendChild(l);
+  }
+}
+function role(n,r){
+  n.role=r;n.el.className='node '+r+(n.alive?'':' down');
+  n.el.querySelector('.role').textContent=r.toUpperCase();
+  n.el.querySelector('.term').textContent='Term '+term;
+}
+function updateStats(){
+  document.getElementById('termStat').textContent=term;
+  document.getElementById('leaderStat').textContent=leader===null?'None':'Node '+(leader+1);
+  document.getElementById('votesStat').textContent=votes+' / '+quorum;
+  document.getElementById('aliveStat').textContent=nodes.filter(n=>n.alive).length+' / 5';
+}
+function explain(title,text){
+  document.getElementById('eventTitle').innerHTML=title;
+  document.getElementById('eventText').innerHTML=text;
+}
+function log(msg,important=false){
+  const d=document.createElement('div'); d.textContent='› '+msg;if(important)d.className='important';
+  const l=document.getElementById('log');l.appendChild(d);l.scrollTop=l.scrollHeight;
+}
+function packet(from,to,label,type,duration=800){
+  if(!nodes[from]?.alive || !nodes[to]?.alive)return Promise.resolve();
+  const a=nodes[from].el,b=nodes[to].el,r=cluster.getBoundingClientRect();
+  const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+  const p=document.createElement('div');p.className='packet '+type;p.textContent=label;
+  const sx=ar.left-r.left+ar.width/2, sy=ar.top-r.top+ar.height/2;
+  const ex=br.left-r.left+br.width/2, ey=br.top-r.top+br.height/2;
+  p.style.left=sx+'px';p.style.top=sy+'px';p.style.transform='translate(-50%,-50%)';
+  cluster.appendChild(p);
+  return new Promise(res=>{
+    requestAnimationFrame(()=>{
+      p.style.transition=`left ${duration}ms linear, top ${duration}ms linear`;
+      p.style.left=ex+'px';p.style.top=ey+'px';
+    });
+    setTimeout(()=>{p.remove();res()},duration+30);
+  });
+}
+function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+function resetTimers(){
+  timers.forEach(clearTimeout);timers=[];
+  nodes.forEach(n=>{let bar=n.el.querySelector('.timer div');bar.style.transition='none';bar.style.transform='scaleX(1)'});
+}
+function animateElectionTimer(id,ms){
+  const n=nodes[id]; if(!n.alive||n.role==='leader')return;
+  let bar=n.el.querySelector('.timer div');bar.style.transition='none';bar.style.transform='scaleX(1)';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{bar.style.transition=`transform ${ms}ms linear`;bar.style.transform='scaleX(0)'}));
+}
+async function triggerElection(preferred){
+  if(nodes.filter(n=>n.alive).length<quorum){explain('No quorum','Fewer than 3 nodes are active. A leader cannot be elected safely.');return}
+  clearInterval(heartbeatTimer); heartbeatTimer=null; resetTimers();
+  let c = preferred ?? nodes.findIndex(n=>n.alive && n.role!=='leader');
+  if(c<0)return;
+  leader=null; term++; votes=1;
+  nodes.forEach(n=>{if(n.alive)role(n,'follower')});
+  role(nodes[c],'candidate'); updateStats();
+  explain(`Node ${c+1} election timeout expired`,
+    `Node ${c+1} received no heartbeat before its timeout. It becomes a <b>Candidate</b>, increments the term to <b>${term}</b>, and votes for itself.`);
+  log(`Node ${c+1} times out → CANDIDATE. Term becomes ${term}.`);
+  log(`Node ${c+1} votes for itself. Votes = 1.`);
+  await delay(700);
+  const peers=nodes.filter(n=>n.id!==c&&n.alive);
+  explain('RequestVote RPCs',`The candidate sends <b>RequestVote(term=${term})</b> to the other active servers.`);
+  await Promise.all(peers.map(n=>packet(c,n.id,'RequestVote','vote',650)));
+  for(const n of peers){
+    if(leader!==null)break;
+    await packet(n.id,c,'Vote ✓','ack',450);
+    votes++; updateStats(); log(`Node ${n.id+1} grants vote to Node ${c+1}. Votes = ${votes}.`);
+    if(votes>=quorum){
+      leader=c; role(nodes[c],'leader'); updateStats();
+      explain(`Node ${c+1} becomes LEADER`,
+        `It has <b>${votes} votes</b>, reaching the quorum of <b>${quorum}</b>. Node ${c+1} is now leader for term ${term}. It immediately starts sending heartbeats.`);
+      log(`QUORUM reached (${votes}/${quorum}). Node ${c+1} → LEADER.`,true);
+      await delay(500); sendHeartbeats(); startHeartbeatLoop(); break;
+    }
+  }
+}
+async function sendHeartbeats(){
+  if(leader===null||!nodes[leader]?.alive){
+    explain('No active leader','There is no leader to send heartbeats. Trigger an election first.');return;
+  }
+  const peers=nodes.filter(n=>n.id!==leader&&n.alive);
+  explain('Leader heartbeat',
+    `Node ${leader+1} sends <b>AppendEntries heartbeat</b> messages. Each follower resets its election timeout, so it remains a follower.`);
+  log(`Leader Node ${leader+1} sends heartbeat for term ${term}.`);
+  peers.forEach(n=>{role(n,'follower'); animateElectionTimer(n.id,2600)});
+  await Promise.all(peers.map(n=>packet(leader,n.id,'♥ Heartbeat','heartbeat',550)));
+}
+function startHeartbeatLoop(){
+  clearInterval(heartbeatTimer);
+  heartbeatTimer=setInterval(()=>{if(leader!==null&&nodes[leader].alive)sendHeartbeats()},3000);
+}
+async function stopLeader(){
+  if(leader===null){explain('No leader to stop','Elect a leader first.');return}
+  const old=leader; clearInterval(heartbeatTimer);heartbeatTimer=null;
+  nodes[old].alive=false;nodes[old].el.classList.add('down');leader=null;votes=0;updateStats();
+  explain(`Node ${old+1} failed`,
+    `The leader is now unavailable. Heartbeats stop. Followers will eventually hit their randomized <b>election timeouts</b>, and one will become a candidate.`);
+  log(`Leader Node ${old+1} FAILED. Heartbeats stop.`,true);
+  await delay(1700);
+  let next=nodes.find(n=>n.alive);
+  if(next){log(`Node ${next.id+1}'s election timeout expires first.`);triggerElection(next.id)}
+}
+async function startDemo(){
+  resetCluster(); await delay(700);
+  explain('Randomized election timers',
+    'Followers use different election timeouts. The first follower whose timer expires starts a new election. This randomness helps avoid split votes.');
+  log('Followers start randomized election timers.');
+  nodes.forEach((n,i)=>animateElectionTimer(i,1300+i*350));
+  await delay(1500); await triggerElection(0);
+}
+function resetCluster(){
+  clearInterval(heartbeatTimer);heartbeatTimer=null;demoTimers.forEach(clearTimeout);demoTimers=[];resetTimers();
+  term=0;leader=null;votes=0;
+  nodes.forEach(n=>{n.alive=true;n.votedTerm=-1;role(n,'follower');n.el.classList.remove('down')});
+  document.getElementById('log').innerHTML='';updateStats();
+  explain('Cluster initialized','All servers start as <b>Followers</b>. Each waits for a leader heartbeat. If a follower does not receive one before its randomized election timeout, it becomes a <b>Candidate</b>.');
+  log('5-node Raft cluster initialized.');
+}
+makeNodes(); log('5-node Raft cluster initialized.');
+window.addEventListener('resize',drawLinks);
+</script>
+</body>
+</html>
