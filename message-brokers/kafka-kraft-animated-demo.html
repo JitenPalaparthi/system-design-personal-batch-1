@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Kafka KRaft — Multi Topic / Broker / Partition Animation</title>
+<style>
+:root{
+  --bg:#07111f; --panel:#0d1b2d; --panel2:#11233a; --text:#eaf2ff; --muted:#8fa7c6;
+  --green:#35d07f; --amber:#ffbd4a; --red:#ff5d68; --blue:#57a6ff; --purple:#b789ff;
+  --line:#31506f;
+}
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 50% 0,#102847,#07111f 45%);
+color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:22px 28px 10px;text-align:center} h1{margin:0;font-size:30px}
+.sub{color:var(--muted);margin-top:6px}.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:14px}
+button,select{border:1px solid #355372;background:#10243b;color:white;border-radius:9px;padding:9px 13px;font-weight:650}
+button:hover{background:#17304d;cursor:pointer}.danger{border-color:#843a46}.good{border-color:#2d7754}
+main{max-width:1500px;margin:auto;padding:0 20px 28px}.kraft{display:flex;gap:12px;align-items:center;justify-content:center;
+background:#0b192a;border:1px solid #263e59;border-radius:13px;padding:12px;margin-bottom:14px}
+.kraft .node{padding:8px 13px;border-radius:9px;background:#132840;border:1px solid #385777}
+.kraft .controller{box-shadow:0 0 0 2px var(--purple) inset}.legend{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;
+color:var(--muted);font-size:13px;margin:10px}.dot{width:9px;height:9px;display:inline-block;border-radius:50%;margin-right:5px}
+.cluster{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.broker{position:relative;min-height:480px;
+background:linear-gradient(180deg,#0e1e31,#091625);border:1px solid #2d4966;border-radius:15px;padding:14px;transition:.3s}
+.broker.failed{filter:grayscale(.8);opacity:.42;border-color:var(--red)}.broker h2{margin:0 0 4px;font-size:19px}
+.status{font-size:12px;color:var(--green)}.failed .status{color:var(--red)}
+.topic-title{margin:15px 0 7px;color:#a9bed9;font-size:13px;text-transform:uppercase;letter-spacing:1.3px}
+.part{position:relative;border:1px solid #2a4663;background:#10233a;border-radius:11px;padding:10px;margin:8px 0;overflow:hidden}
+.part.leader{border-color:var(--amber);box-shadow:0 0 0 1px rgba(255,189,74,.15)}
+.phead{display:flex;justify-content:space-between;gap:8px;align-items:center}.role{font-size:11px;border-radius:20px;padding:3px 8px}
+.leader .role{background:#5b451d;color:#ffd77f}.follower .role{background:#193c54;color:#8ed6ff}
+.log{display:flex;gap:4px;margin-top:9px;min-height:24px}.msg{width:25px;height:22px;border-radius:5px;background:var(--blue);
+font-size:10px;display:flex;align-items:center;justify-content:center;animation:pop .25s ease}.msg.new{background:var(--green)}
+@keyframes pop{from{transform:scale(.2);opacity:0}to{transform:scale(1);opacity:1}}
+.event{margin-top:14px;background:#091625;border:1px solid #29445f;border-radius:12px;padding:12px;height:145px;overflow:auto;
+font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.event div{margin:3px 0;color:#b8cae0}.event .warn{color:#ffca68}.event .err{color:#ff7b84}.event .ok{color:#61dc98}
+.flow{height:42px;position:relative;margin:5px 0 10px}.packet{position:absolute;left:3%;top:8px;width:18px;height:18px;border-radius:50%;
+background:var(--green);box-shadow:0 0 15px var(--green);display:none}.packet.go{display:block;animation:travel 1.2s ease-in-out}
+@keyframes travel{from{left:3%}to{left:95%}}
+.explain{margin-top:14px;border:1px solid #304d6a;background:#0c1a2b;border-radius:12px;padding:14px;color:#c6d5e8}
+.explain b{color:white}.badge{display:inline-block;padding:2px 7px;border-radius:10px;background:#203954;color:#c9def7;font-size:11px}
+@media(max-width:900px){.cluster{grid-template-columns:1fr}.broker{min-height:auto}}
+</style>
+</head>
+<body>
+<header>
+<h1>Apache Kafka + KRaft Interactive Cluster</h1>
+<div class="sub">Multiple Topics • Multiple Brokers • Multiple Partitions • Replication • Leader Election</div>
+</header>
+
+<div class="controls">
+<select id="topic"><option>Orders</option><option>Payments</option></select>
+<select id="partition"><option value="0">Partition 0</option><option value="1">Partition 1</option><option value="2">Partition 2</option></select>
+<button class="good" onclick="produce()">▶ Produce Message</button>
+<button class="danger" onclick="fail(1)">Fail Broker 1</button>
+<button class="danger" onclick="fail(2)">Fail Broker 2</button>
+<button class="danger" onclick="fail(3)">Fail Broker 3</button>
+<button onclick="recoverAll()">↻ Recover Brokers</button>
+<button onclick="reset()">Reset Demo</button>
+</div>
+
+<main>
+<div class="kraft">
+ <b>KRaft Metadata Quorum</b>
+ <span class="node controller">Broker 1 / Controller <b>LEADER</b></span>
+ <span class="node">Broker 2 / Controller Voter</span>
+ <span class="node">Broker 3 / Controller Voter</span>
+</div>
+<div class="legend">
+<span><i class="dot" style="background:var(--amber)"></i>Partition Leader</span>
+<span><i class="dot" style="background:var(--blue)"></i>Follower Replica</span>
+<span><i class="dot" style="background:var(--green)"></i>Message / Replication</span>
+<span><i class="dot" style="background:var(--red)"></i>Failed Broker</span>
+</div>
+<div class="flow"><div id="packet" class="packet"></div></div>
+<div id="cluster" class="cluster"></div>
+
+<div class="explain" id="explain">
+<b>Important:</b> KRaft controller leadership and Kafka partition leadership are different concepts.
+The <span class="badge">KRaft Controller Leader</span> manages cluster metadata and coordinates metadata changes.
+Each topic partition independently has its own <span class="badge">Partition Leader</span>, which handles reads/writes and is replicated to follower replicas.
+</div>
+<div class="event" id="events"></div>
+</main>
+
+<script>
+const brokers=[1,2,3], topics=["Orders","Payments"];
+let failed=new Set(), seq=0;
+
+// RF=3 for teaching: every partition exists on every broker.
+// Different preferred leaders distribute partition leadership.
+const preferred={
+ Orders:{0:1,1:2,2:3},
+ Payments:{0:2,1:3,2:1}
+};
+const logs={};
+topics.forEach(t=>{logs[t]={};[0,1,2].forEach(p=>logs[t][p]=[])});
+
+function currentLeader(t,p){
+ const pref=preferred[t][p];
+ if(!failed.has(pref)) return pref;
+ return brokers.find(b=>!failed.has(b)) || null;
+}
+function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+function render(){
+ const root=document.getElementById("cluster"); root.innerHTML="";
+ brokers.forEach(b=>{
+   const box=document.createElement("section");
+   box.className="broker "+(failed.has(b)?"failed":"");
+   box.innerHTML=`<h2>Kafka Broker ${b}</h2><div class="status">${failed.has(b)?"● DOWN":"● RUNNING"}</div>`;
+   topics.forEach(t=>{
+     box.innerHTML+=`<div class="topic-title">Topic: ${t}</div>`;
+     [0,1,2].forEach(p=>{
+       const leader=currentLeader(t,p), isLeader=leader===b;
+       const cls=isLeader?"leader":"follower";
+       const role=failed.has(b)?"OFFLINE":isLeader?"LEADER":"FOLLOWER";
+       const msgs=logs[t][p].map(x=>`<span class="msg">${x}</span>`).join("");
+       box.innerHTML+=`<div class="part ${cls}">
+         <div class="phead"><b>${t}-P${p}</b><span class="role">${role}</span></div>
+         <div style="font-size:11px;color:#8da6c4;margin-top:3px">Replica on Broker ${b} • RF=3</div>
+         <div class="log">${msgs}</div>
+       </div>`;
+     });
+   });
+   root.appendChild(box);
+ });
+ updateController();
+}
+function log(text,type=""){
+ const e=document.getElementById("events");
+ const d=document.createElement("div"); d.className=type;
+ d.textContent=new Date().toLocaleTimeString()+"  "+text;
+ e.prepend(d);
+}
+function animate(){
+ const p=document.getElementById("packet"); p.classList.remove("go"); void p.offsetWidth;p.classList.add("go");
+}
+function produce(){
+ const t=document.getElementById("topic").value, p=+document.getElementById("partition").value;
+ const leader=currentLeader(t,p);
+ if(!leader){log(`PRODUCE FAILED: no brokers available for ${t}-P${p}`,"err");return}
+ seq++; logs[t][p].push(seq); if(logs[t][p].length>8) logs[t][p].shift();
+ animate(); render();
+ log(`Producer → Broker ${leader}, leader of ${t}-P${p}: message ${seq}`,"ok");
+ const followers=brokers.filter(b=>b!==leader&&!failed.has(b));
+ log(`Broker ${leader} leader replicates message ${seq} → followers [${followers.join(", ")}]. ISR acknowledges replication.`);
+ document.getElementById("explain").innerHTML=
+ `<b>Write path:</b> Producer sends record <b>${seq}</b> to the leader of <b>${t}-P${p}</b> on Broker ${leader}.
+ Followers fetch the new record from the leader. With <span class="badge">acks=all</span>, acknowledgement depends on the configured ISR/min.insync.replicas rules.`;
+}
+function fail(b){
+ if(failed.has(b)) return;
+ failed.add(b); log(`Broker ${b} FAILED.`,"err");
+ topics.forEach(t=>[0,1,2].forEach(p=>{
+   if(preferred[t][p]===b){
+     const nl=currentLeader(t,p);
+     if(nl) log(`${t}-P${p}: Broker ${b} was preferred leader → Broker ${nl} elected as available leader.`,"warn");
+   }
+ }));
+ render();
+}
+function recoverAll(){
+ if(!failed.size){log("All brokers are already running.");return}
+ const old=[...failed];failed.clear();render();
+ old.forEach(b=>log(`Broker ${b} RECOVERED. Replica catches up before normal ISR participation.`,"ok"));
+ log("Preferred leaders are restored in this simplified teaching simulation.","ok");
+}
+function updateController(){
+ const alive=brokers.filter(b=>!failed.has(b));
+ const leader=alive[0]||null;
+ document.querySelector(".kraft").innerHTML = `<b>KRaft Metadata Quorum</b>`+
+ brokers.map(b=>`<span class="node ${b===leader?"controller":""}">Broker ${b} / Controller ${failed.has(b)?"<b>DOWN</b>":b===leader?"<b>LEADER</b>":"Voter"}</span>`).join("");
+}
+function reset(){
+ failed.clear();seq=0;topics.forEach(t=>[0,1,2].forEach(p=>logs[t][p]=[]));render();
+ document.getElementById("events").innerHTML="";
+ log("Cluster initialized: 3 brokers, 2 topics, 3 partitions/topic, replication factor 3.","ok");
+}
+render();
+log("Cluster initialized: Orders + Payments; P0/P1/P2; RF=3; KRaft quorum enabled.","ok");
+</script>
+</body>
+</html>

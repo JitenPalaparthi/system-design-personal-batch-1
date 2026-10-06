@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NATS Interactive Messaging Demo</title>
+<style>
+:root{--bg:#07111f;--p:#0d1b2d;--p2:#11243a;--t:#edf5ff;--m:#91a8c4;--g:#36d17f;--b:#58a8ff;--a:#ffc04d;--r:#ff6470;--v:#b78cff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#14345a,#07111f 45%);color:var(--t);font-family:Inter,system-ui,sans-serif}
+header{text-align:center;padding:22px 15px 10px}h1{margin:0;font-size:30px}.sub{color:var(--m);margin-top:6px}
+.tabs,.buttons{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:12px}
+button{padding:9px 14px;border-radius:9px;border:1px solid #355575;background:#10263f;color:white;font-weight:700;cursor:pointer}
+button:hover,.active{background:#1c4168;border-color:#65adff}
+main{max-width:1250px;margin:auto;padding:8px 18px 30px}.desc{background:#0b192a;border:1px solid #294966;border-radius:12px;padding:13px;margin-bottom:12px;color:#c9d8e9}
+.stage{height:480px;position:relative;background:linear-gradient(#0d1d30,#081522);border:1px solid #294863;border-radius:16px;overflow:hidden}
+.node{position:absolute;width:170px;min-height:72px;border:1px solid #365b7c;background:#112740;border-radius:12px;padding:11px;text-align:center;z-index:3}
+.node b{display:block}.small{font-size:11px;color:var(--m);margin-top:4px}.server{left:50%;top:195px;transform:translateX(-50%);border-color:var(--g);box-shadow:0 0 20px #36d17f22}
+.publisher{left:5%;top:195px}.s1{right:5%;top:45px}.s2{right:5%;top:195px}.s3{right:5%;top:345px}
+.packet{position:absolute;width:20px;height:20px;border-radius:50%;z-index:8;display:none;box-shadow:0 0 15px currentColor}
+.packet.go{display:block;animation:move .75s ease-in-out forwards}@keyframes move{from{left:19%;top:222px}to{left:49%;top:222px}}
+.packet.out1{display:block;animation:o1 .8s ease forwards}@keyframes o1{from{left:51%;top:222px}to{left:85%;top:80px}}
+.packet.out2{display:block;animation:o2 .8s ease forwards}@keyframes o2{from{left:51%;top:222px}to{left:85%;top:225px}}
+.packet.out3{display:block;animation:o3 .8s ease forwards}@keyframes o3{from{left:51%;top:222px}to{left:85%;top:375px}}
+.packet.reply{display:block;animation:reply .9s ease forwards}@keyframes reply{from{left:85%;top:225px}to{left:19%;top:222px}}
+.subject{position:absolute;left:42%;top:285px;color:#91a8c4;font:12px ui-monospace,monospace}
+.counter{display:inline-block;background:#213d5c;border-radius:12px;padding:2px 7px;margin-top:5px;font-size:11px}
+.events{height:145px;overflow:auto;background:#091522;border:1px solid #29465f;border-radius:12px;margin-top:12px;padding:10px;font:12px ui-monospace,monospace}
+.events div{margin:4px;color:#bcd0e7}.ok{color:#5be19b!important}.warn{color:#ffd071!important}.purple{color:#caa8ff!important}
+.note{margin-top:12px;color:#a9bed7;font-size:13px;line-height:1.55}
+@media(max-width:760px){.stage{height:650px}.node{width:140px}.publisher{left:3%;top:275px}.server{top:275px}.s1{right:3%;top:80px}.s2{right:3%;top:275px}.s3{right:3%;top:470px}.subject{top:370px}}
+</style>
+</head>
+<body>
+<header><h1>NATS Messaging — Interactive Animation</h1>
+<div class="sub">Publish / Subscribe • Queue Groups • Request / Reply</div></header>
+
+<div class="tabs">
+<button id="pubtab" class="active" onclick="mode('pubsub')">1. Pub/Sub</button>
+<button id="queuetab" onclick="mode('queue')">2. Queue Group</button>
+<button id="reqtab" onclick="mode('request')">3. Request / Reply</button>
+</div>
+<div class="buttons">
+<button onclick="send()">▶ Send Message</button>
+<button onclick="auto()">▶ Auto Demo</button>
+<button onclick="stopAuto()">■ Stop</button>
+<button onclick="reset()">↻ Reset</button>
+</div>
+
+<main>
+<div class="desc" id="desc"></div>
+<div class="stage">
+ <div class="node publisher" id="left"><b>Publisher</b><div class="small">publishes a message</div><span class="counter" id="pc">sent: 0</span></div>
+ <div class="node server"><b>NATS Server</b><div class="small">subject-based routing</div></div>
+ <div class="subject" id="subject">Subject: orders.created</div>
+ <div class="node s1"><b id="n1">Subscriber A</b><div class="small" id="d1">orders.created</div><span class="counter" id="c1">received: 0</span></div>
+ <div class="node s2"><b id="n2">Subscriber B</b><div class="small" id="d2">orders.created</div><span class="counter" id="c2">received: 0</span></div>
+ <div class="node s3"><b id="n3">Subscriber C</b><div class="small" id="d3">orders.created</div><span class="counter" id="c3">received: 0</span></div>
+ <div id="pin" class="packet" style="background:var(--g);color:var(--g)"></div>
+ <div id="p1" class="packet" style="background:var(--b);color:var(--b)"></div>
+ <div id="p2" class="packet" style="background:var(--a);color:var(--a)"></div>
+ <div id="p3" class="packet" style="background:var(--v);color:var(--v)"></div>
+</div>
+<div class="events" id="events"></div>
+<div class="note"><b>Core NATS:</b> messages are normally transient. The server routes a message to active subscribers. 
+<b>JetStream</b> adds persistence, replay, acknowledgements and durable consumers. This animation focuses on Core NATS messaging semantics.</div>
+</main>
+
+<script>
+let current="pubsub",sent=0,counts=[0,0,0],rr=0,timer=null;
+const $=x=>document.getElementById(x);
+function cls(id,c){$(id).className="packet "+c;setTimeout(()=>$(id).className="packet",950)}
+function event(s,c="") {let x=document.createElement("div");x.className=c;x.textContent=new Date().toLocaleTimeString()+"  "+s;$("events").prepend(x)}
+function update(){ $("pc").textContent="sent: "+sent;counts.forEach((x,i)=>$("c"+(i+1)).textContent="received: "+x)}
+function mode(m){
+ current=m;stopAuto();counts=[0,0,0];sent=0;rr=0;update();
+ ["pubtab","queuetab","reqtab"].forEach(x=>$(x).classList.remove("active"));
+ if(m==="pubsub"){
+  $("pubtab").classList.add("active");$("left").querySelector("b").textContent="Publisher";
+  ["Subscriber A","Subscriber B","Subscriber C"].forEach((x,i)=>$("n"+(i+1)).textContent=x);
+  ["orders.created","orders.created","orders.created"].forEach((x,i)=>$("d"+(i+1)).textContent=x);
+  $("subject").textContent="Subject: orders.created";
+  $("desc").innerHTML="<b>Publish / Subscribe:</b> all active subscribers listening to the same subject receive a copy of the published message.";
+  event("PUB/SUB mode: one publication → every matching subscriber.","ok");
+ }else if(m==="queue"){
+  $("queuetab").classList.add("active");$("left").querySelector("b").textContent="Publisher";
+  ["Worker A","Worker B","Worker C"].forEach((x,i)=>$("n"+(i+1)).textContent=x);
+  ["queue: processors","queue: processors","queue: processors"].forEach((x,i)=>$("d"+(i+1)).textContent=x);
+  $("subject").textContent="Subject: jobs.process  |  Queue Group: processors";
+  $("desc").innerHTML="<b>Queue Group:</b> multiple subscribers join the same queue group. For each message, NATS delivers to <b>one</b> member of that group, providing load balancing.";
+  event("QUEUE mode: each message → one queue-group member.","warn");
+ }else{
+  $("reqtab").classList.add("active");$("left").querySelector("b").textContent="Requester";
+  $("n1").textContent="Service Instance A";$("n2").textContent="Service Instance B";$("n3").textContent="Service Instance C";
+  ["service: calc","service: calc","service: calc"].forEach((x,i)=>$("d"+(i+1)).textContent=x);
+  $("subject").textContent="Request Subject: calc.add  +  unique reply inbox";
+  $("desc").innerHTML="<b>Request / Reply:</b> the requester publishes a request with a unique reply subject (inbox). One service instance handles it and publishes the response to that inbox.";
+  event("REQUEST/REPLY mode: request → service → reply inbox → requester.","purple");
+ }
+}
+function send(){
+ sent++;update();cls("pin","go");
+ setTimeout(()=>{
+  if(current==="pubsub"){
+   cls("p1","out1");cls("p2","out2");cls("p3","out3");counts=counts.map(x=>x+1);update();
+   event(`Message ${sent}: NATS fan-out → A, B and C all receive it.`,"ok");
+  } else {
+   let i=rr++%3; cls("p"+(i+1),"out"+(i+1));counts[i]++;update();
+   if(current==="queue") event(`Message ${sent}: delivered to only Worker ${["A","B","C"][i]} in queue group processors.`,"warn");
+   else {
+    event(`Request ${sent}: routed to Service Instance ${["A","B","C"][i]}. Reply subject attached.`,"purple");
+    setTimeout(()=>{cls("p"+(i+1),"reply");event(`Response ${sent}: service publishes response to requester's unique inbox.`,"ok")},850);
+   }
+  }
+ },700);
+}
+function auto(){stopAuto();send();timer=setInterval(send,2200)}
+function stopAuto(){if(timer){clearInterval(timer);timer=null}}
+function reset(){stopAuto();sent=0;counts=[0,0,0];rr=0;update();$("events").innerHTML="";event("Demo reset.","ok")}
+mode("pubsub");
+</script>
+</body></html>

@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset='utf-8'><title>Kafka Partitioning & Replication</title><style>body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:28px}h1{text-align:center;color:#38bdf8}h2{color:#fbbf24}.topic,.broker,.note{background:#1e293b;border:2px solid #334155;border-radius:12px;padding:18px;margin:18px 0}.row{display:flex;gap:15px;flex-wrap:wrap}.part,.broker{flex:1;min-width:220px}.part{background:#334155;border-radius:8px;padding:14px}.leader{color:#4ade80;font-weight:bold}.follower{color:#facc15}table{width:100%;border-collapse:collapse}th,td{border:1px solid #475569;padding:9px;text-align:center}th{color:#38bdf8}pre{background:#020617;padding:14px;border-radius:8px;overflow:auto}</style></head><body>
+<h1>Apache Kafka: 2 Topics, Partitions, Replication & Leaders</h1><p style='text-align:center'>Producer → Topic → Partition Leader → Follower Replicas</p>
+<div class='topic'><h2>Topic: orders</h2><p>3 partitions • replication factor 3</p><div class='row'><div class='part'><b>P0</b><p class='leader'>Leader: Broker 1</p><p class='follower'>Followers: Broker 2, 3</p></div><div class='part'><b>P1</b><p class='leader'>Leader: Broker 2</p><p class='follower'>Followers: Broker 3, 1</p></div><div class='part'><b>P2</b><p class='leader'>Leader: Broker 3</p><p class='follower'>Followers: Broker 1, 2</p></div></div></div>
+<div class='topic'><h2>Topic: payments</h2><p>2 partitions • replication factor 3</p><div class='row'><div class='part'><b>P0</b><p class='leader'>Leader: Broker 2</p><p class='follower'>Followers: Broker 1, 3</p></div><div class='part'><b>P1</b><p class='leader'>Leader: Broker 3</p><p class='follower'>Followers: Broker 2, 1</p></div></div></div>
+<h2>Physical Brokers</h2><div class='row'><div class='broker'><h3>Broker 1</h3><p class='leader'>orders-P0 LEADER</p><p>orders-P1 follower</p><p>orders-P2 follower</p><p>payments-P0 follower</p><p>payments-P1 follower</p></div><div class='broker'><h3>Broker 2</h3><p>orders-P0 follower</p><p class='leader'>orders-P1 LEADER</p><p>orders-P2 follower</p><p class='leader'>payments-P0 LEADER</p><p>payments-P1 follower</p></div><div class='broker'><h3>Broker 3</h3><p>orders-P0 follower</p><p>orders-P1 follower</p><p class='leader'>orders-P2 LEADER</p><p>payments-P0 follower</p><p class='leader'>payments-P1 LEADER</p></div></div>
+<div class='note'><h2>Key idea</h2><pre>Topic orders
+ ├─ P0 → B1 Leader → B2/B3 Followers
+ ├─ P1 → B2 Leader → B3/B1 Followers
+ └─ P2 → B3 Leader → B1/B2 Followers
+
+Topic payments
+ ├─ P0 → B2 Leader → B1/B3 Followers
+ └─ P1 → B3 Leader → B2/B1 Followers</pre><p><b>Partitioning</b> provides scalability/parallelism. <b>Replication</b> provides fault tolerance. Each partition—not each topic—has its own leader.</p><h2>If Broker 1 fails</h2><pre>orders-P0:
+Broker 1 → DOWN (old leader)
+Broker 2 → NEW LEADER (example, if eligible/in-sync)
+Broker 3 → Follower</pre></div>
+</body></html>
